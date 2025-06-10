@@ -1,0 +1,29 @@
+fastapi
+uvicorn
+pydantic
+# AutoGen core packages
+autogen-agentchat
+autogen-core
+autogen-ext[openai,web-surfer]
+autogen-ext[anthropic]
+
+# Core AI APIs
+openai
+anthropic
+
+# Tools and libraries
+playwright
+pydub
+yfinance
+matplotlib
+pytz
+numpy
+pandas
+python-dotenv
+requests
+beautifulsoup4
+Ipython
+
+# Optional local TTS tools
+pyttsx3
+gTTS
