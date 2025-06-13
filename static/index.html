@@ -73,7 +73,7 @@
 
       ws.onmessage = (event) => {
         if (event.data.startsWith("__AUDIO_URL__/")) {
-          const audioUrl = "https://doubt-02.onrender.com/" + event.data.replace("__AUDIO_URL__/, "");
+          const audioUrl = "https://doubt-02.onrender.com/" + event.data.replace("__AUDIO_URL__/", "");
           audioQueue.push(audioUrl);
           if (!isPlaying) {
             playNextAudio();
