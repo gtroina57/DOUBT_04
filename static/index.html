@@ -1,88 +1,95 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Multi-Agent Debate</title>
 </head>
 <body>
-  <h2>Multi-Agent Debate</h2>
-
-  <textarea id="log" cols="80" rows="20" readonly></textarea><br>
-
-  <input id="topicInput" type="text" placeholder="Enter debate topic..." size="60" />
-  <button onclick="setTopic()">Set Topic</button><br><br>
-
-  <input id="messageInput" type="text" placeholder="Type your message..." size="60" />
-  <button id="sendButton" onclick="sendMessage()" disabled>Send</button>
-  <label>
-    <input type="checkbox" id="spontaneousToggle" checked />
-    Allow spontaneous interventions
-  </label><br><br>
-
-  <progress id="audioProgress" value="0" max="1" style="width: 400px; display: none;"></progress>
+  <h1>Multi-Agent Debate System</h1>
+  <textarea id="log" rows="20" cols="80" readonly></textarea><br>
+  <input type="text" id="input" placeholder="Enter message" />
+  <button onclick="sendMessage()">Send</button>
 
   <script>
-  const ws = new WebSocket("wss://doubt-02.onrender.com/ws");
-  const audioQueue = [];
-  let isPlaying = false;
-  let userHasTurn = false;
+    let ws;
+    let isPlaying = false;
+    let audioQueue = [];
 
-  ws.onopen = () => {
-    log("✅ Connected to debate server.");
-  };
-
-  ws.onmessage = (event) => {
-    if (event.data === "__USER_PROXY_TURN__") {
-      userHasTurn = true;
-      log("🎤 Moderator gives you the floor. You may speak now.");
-      document.getElementById("messageInput").placeholder = "Type your response...";
-      return;
+    function log(message) {
+      const logBox = document.getElementById("log");
+      logBox.value += message + "\n";
+      logBox.scrollTop = logBox.scrollHeight;
     }
 
-    if (event.data.startsWith("__AUDIO_URL__/")) {
-      const audioUrl = "https://doubt-02.onrender.com/" + event.data.replace("__AUDIO_URL__/", "");
-      audioQueue.push(audioUrl);
-      if (!isPlaying) {
-        playNextAudio();
+    function sendMessage() {
+      const input = document.getElementById("input");
+      if (input.value.trim() !== "") {
+        ws.send(input.value);
+        input.value = "";
       }
-      return;
     }
 
-    log("📩 " + event.data);
-  };
+    function playNextAudio() {
+      if (audioQueue.length === 0) {
+        isPlaying = false;
+        return;
+      }
 
-  function playNextAudio() {
-    if (audioQueue.length === 0) {
-      isPlaying = false;
-      return;
+      const url = audioQueue.shift();
+      isPlaying = true;
+      log("🔊 Preparing to play: " + url);
+
+      // Short delay before playing to avoid race condition
+      setTimeout(() => {
+        const audio = new Audio(url);
+        log("🔊 Playing audio from: " + url);
+
+        audio.onended = () => {
+          isPlaying = false;
+          playNextAudio();
+        };
+
+        audio.onerror = () => {
+          log("❌ Error playing audio.");
+          isPlaying = false;
+          playNextAudio();
+        };
+
+        audio.play().catch(err => {
+          log("❌ Play() failed: " + err.message);
+          isPlaying = false;
+          playNextAudio();
+        });
+      }, 300); // Delay of 300ms
     }
 
-    const url = audioQueue.shift();
-    const audio = new Audio(url);
-    isPlaying = true;
-    log("🔊 Playing audio from: " + url);
+    window.onload = () => {
+      ws = new WebSocket("wss://doubt-02.onrender.com/ws");
 
-    audio.onended = () => {
-      isPlaying = false;
-      playNextAudio();
+      ws.onopen = () => {
+        log("✅ Connected to debate server");
+      };
+
+      ws.onmessage = (event) => {
+        if (event.data.startsWith("__AUDIO_URL__/")) {
+          const audioUrl = "https://doubt-02.onrender.com/" + event.data.replace("__AUDIO_URL__/, "");
+          audioQueue.push(audioUrl);
+          if (!isPlaying) {
+            playNextAudio();
+          }
+          return;
+        }
+        log(event.data);
+      };
+
+      ws.onclose = () => {
+        log("❌ Connection closed");
+      };
     };
-
-    audio.onerror = () => {
-      log("❌ Error playing audio.");
-      isPlaying = false;
-      playNextAudio();
-    };
-
-    audio.play();
-  }
-
-  ws.onclose = () => {
-    log("❌ WebSocket disconnected.");
-  };
-
-  ws.onerror = (err) => {
-    log("⚠️ WebSocket error: " + err.message);
-  };
+  </script>
+</body>
+</html>
 
   function log(message) {
     const logArea = document.getElementById("log");
