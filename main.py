@@ -65,6 +65,9 @@ async def get_index():
     return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
 
 
+#####################################################################################################
+#global user_proxy, team, loaded_team_state, agents, agent_list, model_client_openai, model_client_gemini
+
 ################################ Create OpenAI model client   #############################
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
@@ -96,18 +99,15 @@ team = None
 loaded_team_state = None  # Will hold config if loaded before team is created
 task1 ="This is a debate on ethics and AI"
 print("✅ Environment cleared.")
-stop_execution = False
-
-############################ QUEUES  #########################################
-# Globals
-speech_queue = asyncio.Queue()
-user_message_queue = asyncio.Queue()
-spontaneous_queue = asyncio.Queue()
-prioritized_agents = deque()
 
 ############################ TEXT TO SPEECH  #########################################
 # Globals
 processed_messages = set()
+stop_execution = False
+speech_queue = asyncio.Queue()
+user_message_queue = asyncio.Queue()
+spontaneous_queue = asyncio.Queue()
+prioritized_agents = deque()
 
 client1 = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 os.makedirs("audio", exist_ok=True)  # Folder to serve audio files
@@ -166,7 +166,9 @@ async def speak_worker(websocket):
                 f.write(response.content)
 
             print(f"🔊 Audio saved to {filepath}")
-
+            
+            await asyncio.sleep(1.0)
+            
             if websocket:
                 await websocket.send_text(f"__AUDIO_URL__/audio/{filename}")
 
@@ -182,7 +184,11 @@ model_clients_map = {
     "openai": model_client_openai,
     "gemini": model_client_gemini
 }
-
+##########################################################################################################
+################################# Load default configuration    ##########################################
+with open(CONFIG_FILE, "r") as f:
+    agent_config = json.load(f)
+    
 ##########################################################################################################
 ################################# Build name_to_agent_skill for introducing Agents #######################
 def extract_agent_skills(config_path):
@@ -201,9 +207,9 @@ def extract_agent_skills(config_path):
 
 ##########################################################################################################
 ################################# Build Agents from configuration  #######################################
+
 tool_lookup = {
 }
-
 ##########################################################################################################
 ################################# Build Agents from configuration  #######################################
 def build_agents_from_config(config_path, name_to_agent_skill, model_clients_map):
@@ -249,9 +255,13 @@ def build_agents_from_config(config_path, name_to_agent_skill, model_clients_map
         agents[name] = agent
         print(f"✅ Initialized {len(agents)} agents for debate topic: {task1}")
     return agents
-   
+
+
+#print(f"✅ Initialized {len(agents)} agents for debate topic: {task1}")
+    
+
 ##########################################################################################################
-################################# TERMINATION  ###########################################################
+################################# Termination  ####################################
 text_mention_termination = TextMentionTermination("TERMINATE")
 max_messages_termination = MaxMessageTermination(max_messages=80)
 termination = text_mention_termination | max_messages_termination
@@ -349,6 +359,8 @@ def dynamic_selector_func(thread):
 #print(dir(agents["user_proxy"]))
 #print(dir (team))
 #print(help (team))
+
+
 ####################################################################################################
 # === Globals ===
 user_conversation = []
@@ -356,10 +368,10 @@ gradio_input_buffer = {"message": None}
 agent_config_ui = {}
 
 ################## SET TOPIC        ###########################################################
-#def set_task_only(task_text):
-#            global task1
-#           task1 = task_text
-#            return "✅ Debate topic set." if task_text else "❌ Topic cannot be empty."#
+def set_task_only(task_text):
+            global task1
+            task1 = task_text
+            return "✅ Debate topic set." if task_text else "❌ Topic cannot be empty."
 
 ##########################################################################################################
 ################################# Configuration File    ###################################################=
@@ -383,6 +395,7 @@ def save_agent_config(*args):
         json.dump(updated, f, indent=2)
     return "✅ Configuration saved."
 
+
 ##########################################################################################################
 ################################# SAVE Config    ###################################################
 # === Save config ===
@@ -397,6 +410,7 @@ async def save_config():
 def sync_save_config():
     return asyncio.run(save_config())  # 'team' must be globally accessible
 
+
 ##########################################################################################################
 ################################# LOAD Config   ###################################################
 def sync_load_config():
@@ -408,7 +422,6 @@ def sync_load_config():
 
 ##########################################################################################################
 ################################# User Intervention    ###################################################
-"""
 # === User interaction ===
 def handle_user_message(message):
     global user_conversation, gradio_input_buffer
@@ -419,7 +432,7 @@ def handle_user_message(message):
 def intervene_now(user_input):
     return handle_user_message(user_input)
 
-"""
+
 ##########################################################################################################
 ################################# loop for debate  #######################################################
 async def run_chat(team, websocket=None):
@@ -456,16 +469,14 @@ async def run_chat(team, websocket=None):
                 await speech_queue.put(("system", "TERMINATE"))
                 print("✅ Chat terminated.")
                 break
-
-
-#####################################################################################################       
-#####################################################################################################            
-
+            
 @app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {"status": "ok", "message": "Service is running"}
 
 import traceback
+
+#########
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -505,18 +516,18 @@ async def websocket_endpoint(websocket: WebSocket):
         name_to_agent_skill = extract_agent_skills(CONFIG_FILE)
         agents = build_agents_from_config(CONFIG_FILE, name_to_agent_skill, model_clients_map)
 
+        # 🎤 User input handler
         
-#####################################################################################################       
-################################# 🎤 User input handler##############################################
+        
+#####################################################################################################
         async def websocket_listener(websocket):
-            global user_message_queue, spontaneous_queue, prioritized_agents
+            global user_message_queue, spontaneous_queue
             while True:
                 print("PLUTO2")                
                 data = await websocket.receive_text()
                 if data == "__ping__":
-                    print("PLUTO3")
+                    print("PLUTO2")
                     continue
-                
                 if data == "__USER_PROXY_TURN__":
                     print("🎙️ Moderator gave the floor to user.")
                     # Wait for user input (the next message will go to the queue)
@@ -532,6 +543,19 @@ async def websocket_endpoint(websocket: WebSocket):
                     print("👤 User responded:", data)
                     print("PLUTO4")
                     await user_message_queue.put(data)
+        
+        """
+        async def wrapped_input_func(*args, **kwargs):
+                global  user_message_queue
+            
+            
+                # 🧑 Moderator gave the floor
+                print("⏳ Waiting for user response...")
+                while True:
+                    msg = await user_message_queue.get()
+                    if msg and msg.strip():
+                        return msg
+        """
        
         async def wrapped_input_func(*args, **kwargs):
                 global spontaneous_queue, user_message_queue
@@ -541,14 +565,12 @@ async def websocket_endpoint(websocket: WebSocket):
                     print("⚡ Using spontaneous message:", msg)
                     return msg
             
-                
-                await websocket.send_text("__USER_PROXY_TURN__")
-            
                 print("⏳ Waiting for user input (moderator turn)...")
                 while True:
                     msg = await user_message_queue.get()
                     if msg and msg.strip():
                         return msg         
+
 
         agents["user_proxy"] = UserProxyAgent(name="user_proxy", input_func=wrapped_input_func)
 
