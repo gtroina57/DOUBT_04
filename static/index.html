@@ -1,128 +1,130 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Multi-Agent Debate</title>
+  <meta charset="UTF-8">
+  <title>Multi-DOUBT</title>
 </head>
 <body>
-  <h1>Multi-Agent Debate System</h1>
+  <h2>Multi-Agent Debate</h2>
 
-  <textarea id="log" rows="20" cols="80" readonly></textarea><br>
-  <input type="text" id="messageInput" placeholder="Enter message" />
-  <input type="checkbox" id="spontaneousToggle"> Spontaneous intervention
-  <button id="sendButton" onclick="sendMessage()">Send</button>
+  <textarea id="log" cols="80" rows="20" readonly></textarea><br>
+
+  <input id="topicInput" type="text" placeholder="Enter debate topic..." size="60" />
+  <button onclick="setTopic()">Set Topic</button><br><br>
+
+  <input id="messageInput" type="text" placeholder="Type your message..." size="60" />
+  <button id="sendButton" onclick="sendMessage()" disabled>Send</button>
+  <label>
+    <input type="checkbox" id="spontaneousToggle" checked />
+    Allow spontaneous interventions
+  </label><br><br>
+
+  <progress id="audioProgress" value="0" max="1" style="width: 400px; display: none;"></progress>
 
   <script>
-    let ws;
-    let isPlaying = false;
-    let audioQueue = [];
-    let userHasTurn = false;
+  const ws = new WebSocket("wss://doubt-02.onrender.com/ws");
+  const audioQueue = [];
+  let isPlaying = false;
+  let userHasTurn = false;
 
-    function log(message) {
-      const logBox = document.getElementById("log");
-      logBox.value += message + "\n";
-      logBox.scrollTop = logBox.scrollHeight;
+  ws.onopen = () => {
+    log("✅ Connected to debate server.");
+  };
+
+  ws.onmessage = (event) => {
+    if (event.data === "__USER_PROXY_TURN__") {
+      userHasTurn = true;
+      log("🎤 Moderator gives you the floor. You may speak now.");
+      document.getElementById("messageInput").placeholder = "Type your response...";
+      return;
     }
 
-    function playNextAudio() {
-      if (audioQueue.length === 0) {
-        isPlaying = false;
-        return;
+    if (event.data.startsWith("__AUDIO_URL__/")) {
+      const audioUrl = "https://doubt-02.onrender.com/" + event.data.replace("__AUDIO_URL__/", "");
+      audioQueue.push(audioUrl);
+      if (!isPlaying) {
+        playNextAudio();
       }
-
-      const url = audioQueue.shift();
-      isPlaying = true;
-      log("🔊 Preparing to play: " + url);
-
-      // Short delay before playing to avoid race condition
-      setTimeout(() => {
-        const audio = new Audio(url);
-        log("🔊 Playing audio from: " + url);
-
-        audio.onended = () => {
-          isPlaying = false;
-          playNextAudio();
-        };
-
-        audio.onerror = () => {
-          log("❌ Error playing audio.");
-          isPlaying = false;
-          playNextAudio();
-        };
-
-        audio.play().catch(err => {
-          log("❌ Play() failed: " + err.message);
-          isPlaying = false;
-          playNextAudio();
-        });
-      }, 300);
+      return;
     }
 
-    function sendMessage() {
-      const input = document.getElementById("messageInput");
-      let message = input.value.trim();
-      const spontaneous = !userHasTurn && document.getElementById("spontaneousToggle").checked;
+    log("📩 " + event.data);
+  };
 
-      if (!message || ws.readyState !== WebSocket.OPEN) return;
+  function playNextAudio() {
+  if (audioQueue.length === 0) {
+    isPlaying = false;
+    return;
+  }
 
-      if (spontaneous) {
-        message = `__SPONTANEOUS__${message}`;
-        log("⚡ Spontaneous intervention sent.");
-      } else {
-        log("🧑 You: " + message);
-        userHasTurn = false;
-        document.getElementById("messageInput").placeholder = "Wait for your turn...";
-      }
+  const url = audioQueue.shift();
+  const audio = new Audio(url);
+  isPlaying = true;
+  log("🔊 Playing audio from: " + url);
 
-      ws.send(message);
-      input.value = "";
-      document.getElementById("sendButton").disabled = true;
+  audio.onended = () => {
+    isPlaying = false;
+    playNextAudio();
+  };
+
+  audio.onerror = () => {
+    log("❌ Error playing audio.");
+    isPlaying = false;
+    playNextAudio();
+  };
+
+  // 🔁 Delay to ensure audio file is ready before playing
+  setTimeout(() => {
+    audio.play();
+  }, 300); // Adjust delay as needed
+}
+
+  function log(message) {
+    const logArea = document.getElementById("log");
+    logArea.value += message + "\n";
+    logArea.scrollTop = logArea.scrollHeight;
+  }
+
+  function setTopic() {
+    const topic = document.getElementById("topicInput").value.trim();
+    if (topic && ws.readyState === WebSocket.OPEN) {
+      ws.send(`__SET_TASK1__:${topic}`);
+      log("📘 Topic sent: " + topic);
+    }
+  }
+
+  function sendMessage() {
+    const input = document.getElementById("messageInput");
+    let message = input.value.trim();
+    const spontaneous = !userHasTurn && document.getElementById("spontaneousToggle").checked;
+
+    if (!message || ws.readyState !== WebSocket.OPEN) return;
+
+    if (spontaneous) {
+      message = `__SPONTANEOUS__${message}`;
+      log("⚡ Spontaneous intervention sent.");
+    } else {
+      log("🧑 You: " + message);
+      userHasTurn = false;
+      document.getElementById("messageInput").placeholder = "Wait for your turn...";
     }
 
-    window.onload = () => {
-      ws = new WebSocket("wss://doubt-02.onrender.com/ws");
+    ws.send(message);
+    input.value = "";
+    document.getElementById("sendButton").disabled = true;
+  }
 
-      ws.onopen = () => {
-        log("✅ Connected to debate server");
-      };
+  // Prevent sending empty messages and enable button when there's content
+  document.getElementById("messageInput").addEventListener("input", function () {
+    const hasText = this.value.trim().length > 0;
+    document.getElementById("sendButton").disabled = !hasText;
+  });
 
-      ws.onmessage = (event) => {
-        if (event.data.startsWith("__AUDIO_URL__/")) {
-          const audioUrl = "https://doubt-02.onrender.com/" + event.data.replace("__AUDIO_URL__/", "");
-          audioQueue.push(audioUrl);
-          if (!isPlaying) {
-            playNextAudio();
-          }
-          return;
-        }
-
-        if (event.data === "__USER_PROXY_TURN__") {
-          userHasTurn = true;
-          document.getElementById("messageInput").placeholder = "Your turn. Enter your message...";
-          document.getElementById("sendButton").disabled = false;
-          log("🎙️ It's your turn to speak.");
-          return;
-        }
-
-        log(event.data);
-      };
-
-      ws.onclose = () => {
-        log("❌ Connection closed");
-      };
-    };
-
-    document.getElementById("messageInput").addEventListener("input", function () {
-      const hasText = this.value.trim().length > 0;
-      document.getElementById("sendButton").disabled = !hasText;
-    });
-
-    setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send("__ping__");
-      }
-    }, 20000);
-  </script>
+  setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send("__ping__");
+    }
+  }, 20000);
+</script>
 </body>
 </html>
