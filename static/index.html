@@ -7,27 +7,22 @@
 </head>
 <body>
   <h1>Multi-Agent Debate System</h1>
+
   <textarea id="log" rows="20" cols="80" readonly></textarea><br>
-  <input type="text" id="input" placeholder="Enter message" />
-  <button onclick="sendMessage()">Send</button>
+  <input type="text" id="messageInput" placeholder="Enter message" />
+  <input type="checkbox" id="spontaneousToggle"> Spontaneous intervention
+  <button id="sendButton" onclick="sendMessage()">Send</button>
 
   <script>
     let ws;
     let isPlaying = false;
     let audioQueue = [];
+    let userHasTurn = false;
 
     function log(message) {
       const logBox = document.getElementById("log");
       logBox.value += message + "\n";
       logBox.scrollTop = logBox.scrollHeight;
-    }
-
-    function sendMessage() {
-      const input = document.getElementById("input");
-      if (input.value.trim() !== "") {
-        ws.send(input.value);
-        input.value = "";
-      }
     }
 
     function playNextAudio() {
@@ -61,7 +56,28 @@
           isPlaying = false;
           playNextAudio();
         });
-      }, 300); // Delay of 300ms
+      }, 300);
+    }
+
+    function sendMessage() {
+      const input = document.getElementById("messageInput");
+      let message = input.value.trim();
+      const spontaneous = !userHasTurn && document.getElementById("spontaneousToggle").checked;
+
+      if (!message || ws.readyState !== WebSocket.OPEN) return;
+
+      if (spontaneous) {
+        message = `__SPONTANEOUS__${message}`;
+        log("⚡ Spontaneous intervention sent.");
+      } else {
+        log("🧑 You: " + message);
+        userHasTurn = false;
+        document.getElementById("messageInput").placeholder = "Wait for your turn...";
+      }
+
+      ws.send(message);
+      input.value = "";
+      document.getElementById("sendButton").disabled = true;
     }
 
     window.onload = () => {
@@ -80,6 +96,15 @@
           }
           return;
         }
+
+        if (event.data === "__USER_PROXY_TURN__") {
+          userHasTurn = true;
+          document.getElementById("messageInput").placeholder = "Your turn. Enter your message...";
+          document.getElementById("sendButton").disabled = false;
+          log("🎙️ It's your turn to speak.");
+          return;
+        }
+
         log(event.data);
       };
 
@@ -87,56 +112,17 @@
         log("❌ Connection closed");
       };
     };
+
+    document.getElementById("messageInput").addEventListener("input", function () {
+      const hasText = this.value.trim().length > 0;
+      document.getElementById("sendButton").disabled = !hasText;
+    });
+
+    setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send("__ping__");
+      }
+    }, 20000);
   </script>
-</body>
-</html>
-
-  function log(message) {
-    const logArea = document.getElementById("log");
-    logArea.value += message + "\n";
-    logArea.scrollTop = logArea.scrollHeight;
-  }
-
-  function setTopic() {
-    const topic = document.getElementById("topicInput").value.trim();
-    if (topic && ws.readyState === WebSocket.OPEN) {
-      ws.send(`__SET_TASK1__:${topic}`);
-      log("📘 Topic sent: " + topic);
-    }
-  }
-
-  function sendMessage() {
-    const input = document.getElementById("messageInput");
-    let message = input.value.trim();
-    const spontaneous = !userHasTurn && document.getElementById("spontaneousToggle").checked;
-
-    if (!message || ws.readyState !== WebSocket.OPEN) return;
-
-    if (spontaneous) {
-      message = `__SPONTANEOUS__${message}`;
-      log("⚡ Spontaneous intervention sent.");
-    } else {
-      log("🧑 You: " + message);
-      userHasTurn = false;
-      document.getElementById("messageInput").placeholder = "Wait for your turn...";
-    }
-
-    ws.send(message);
-    input.value = "";
-    document.getElementById("sendButton").disabled = true;
-  }
-
-  // Prevent sending empty messages and enable button when there's content
-  document.getElementById("messageInput").addEventListener("input", function () {
-    const hasText = this.value.trim().length > 0;
-    document.getElementById("sendButton").disabled = !hasText;
-  });
-
-  setInterval(() => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send("__ping__");
-    }
-  }, 20000);
-</script>
 </body>
 </html>
