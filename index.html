@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Multi-DOUBT</title>
+</head>
+<body>
+  <h2>Multi-Agent Debate</h2>
+
+  <textarea id="log" cols="80" rows="20" readonly></textarea><br>
+
+  <input id="topicInput" type="text" placeholder="Enter debate topic..." size="60" />
+  <button onclick="setTopic()">Set Topic</button><br><br>
+
+  <input id="messageInput" type="text" placeholder="Type your message..." size="60" />
+  <button id="sendButton" onclick="sendMessage()" disabled>Send</button>
+  <label>
+    <input type="checkbox" id="spontaneousToggle" checked />
+    Allow spontaneous interventions
+  </label><br><br>
+
+  <progress id="audioProgress" value="0" max="1" style="width: 400px; display: none;"></progress>
+
+  <script>
+  const ws = new WebSocket("wss://doubt-02.onrender.com/ws");
+  const audioQueue = [];
+  let isPlaying = false;
+  let userHasTurn = false;
+
+  ws.onopen = () => {
+    log("✅ Connected to debate server.");
+  };
+
+  ws.onmessage = (event) => {
+    if (event.data === "__USER_PROXY_TURN__") {
+      userHasTurn = true;
+      log("🎤 Moderator gives you the floor. You may speak now.");
+      document.getElementById("messageInput").placeholder = "Type your response...";
+      return;
+    }
+
+    if (event.data.startsWith("__AUDIO_URL__/")) {
+      const audioUrl = "https://doubt-02.onrender.com/" + event.data.replace("__AUDIO_URL__/", "");
+      audioQueue.push(audioUrl);
+      if (!isPlaying) {
+        playNextAudio();
+      }
+      return;
+    }
+
+    log("📩 " + event.data);
+  };
+
+  function playNextAudio() {
+  if (audioQueue.length === 0) {
+    isPlaying = false;
+    return;
+  }
+
+  const url = audioQueue.shift();
+  const audio = new Audio(url);
+  isPlaying = true;
+  log("🔊 Playing audio from: " + url);
+
+  audio.onended = () => {
+    isPlaying = false;
+    playNextAudio();
+  };
+
+  audio.onerror = () => {
+    log("❌ Error playing audio.");
+    isPlaying = false;
+    playNextAudio();
+  };
+
+  // 🔁 Delay to ensure audio file is ready before playing
+  setTimeout(() => {
+    audio.play();
+  }, 300); // Adjust delay as needed
+}
+
+  function log(message) {
+    const logArea = document.getElementById("log");
+    logArea.value += message + "\n";
+    logArea.scrollTop = logArea.scrollHeight;
+  }
+
+  function setTopic() {
+    const topic = document.getElementById("topicInput").value.trim();
+    if (topic && ws.readyState === WebSocket.OPEN) {
+      ws.send(`__SET_TASK1__:${topic}`);
+      log("📘 Topic sent: " + topic);
+    }
+  }
+
+  function sendMessage() {
+    const input = document.getElementById("messageInput");
+    let message = input.value.trim();
+    const spontaneous = !userHasTurn && document.getElementById("spontaneousToggle").checked;
+
+    if (!message || ws.readyState !== WebSocket.OPEN) return;
+
+    if (spontaneous) {
+      message = `__SPONTANEOUS__${message}`;
+      log("⚡ Spontaneous intervention sent.");
+    } else {
+      log("🧑 You: " + message);
+      userHasTurn = false;
+      document.getElementById("messageInput").placeholder = "Wait for your turn...";
+    }
+
+    ws.send(message);
+    input.value = "";
+    document.getElementById("sendButton").disabled = true;
+  }
+
+  // Prevent sending empty messages and enable button when there's content
+  document.getElementById("messageInput").addEventListener("input", function () {
+    const hasText = this.value.trim().length > 0;
+    document.getElementById("sendButton").disabled = !hasText;
+  });
+
+  setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send("__ping__");
+    }
+  }, 20000);
+</script>
+</body>
+</html>
